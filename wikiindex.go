@@ -1,15 +1,18 @@
-package main
+package wikiindex
 
 import (
 	"bufio"
-	"flag"
+	//"flag"
 	"fmt"
-	"github.com/json-iterator/go"
-	"github.com/pilosa/pdk/v2"
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
+
+	jsoniter "github.com/json-iterator/go"
+	"github.com/pilosa/pdk/v2"
+	"github.com/pkg/errors"
+
+	//	"sort"
 	"strings"
 )
 
@@ -55,7 +58,7 @@ func (v *vistor) processFile(path string, f os.FileInfo) error {
 			if len(word) > 2 {
 				lword := strings.ToLower(word)
 				//maybe split - words
-				v.feed <- wikiRecord{word:lword, dockid:a.Id}
+				v.feed <- wikiRecord{word: lword, docid: a.Id}
 			}
 		}
 
@@ -68,7 +71,7 @@ func (v *vistor) processFile(path string, f os.FileInfo) error {
 }
 
 type vistor struct {
-	feed chan Record
+	feed chan wikiRecord
 }
 
 func (v *vistor) visit(path string, f os.FileInfo, err error) error {
@@ -76,28 +79,28 @@ func (v *vistor) visit(path string, f os.FileInfo, err error) error {
 		return nil
 	}
 
-	v.ProcessFile(path, f)
+	v.processFile(path, f)
 	return nil
 }
 
 type Source struct {
-	feed    <-chan wikiRecord
+	feed    chan wikiRecord
 	schema  []pdk.Field
-	record  *Record
+	record  pdk.Record
 	numMsgs int
+	path    string
 }
 
 func (s *Source) Open() error {
-	v := &vistor{recordChanel}
-	go filepath.Walk(root, visit)
+	v := &vistor{s.feed}
+	go filepath.Walk(s.path, v.visit)
 	return nil
 }
 func (s *Source) Record() (pdk.Record, error) {
 	s.numMsgs++
-	msg, ok := <-s.messages
+	msg, ok := <-s.feed
 	if ok {
-		s.record[0] = msg.docid
-		s.record[1] = msg.word
+		s.record = msg
 		return s.record, nil
 	}
 	return nil, errors.New("messages channel closed")
@@ -108,14 +111,13 @@ func (s *Source) Schema() []pdk.Field {
 }
 
 func NewSource(path string, c chan wikiRecord) *Source {
-	src := &Source{
-		feed:   c,
-		record: &Record{src: src, G},
-		schema: []Field{
-			IDField{NameVal: "doc"},
-			StringField{NameVal: "word"}},
+	return &Source{
+		feed: c,
+		path: path,
+		schema: []pdk.Field{
+			pdk.IDField{NameVal: "doc"},
+			pdk.StringField{NameVal: "word"}},
 	}
-
 }
 
 type wikiRecord struct {
@@ -123,26 +125,26 @@ type wikiRecord struct {
 	docid string
 }
 
-func (wr *wikiRecord) Commit() error {
+func (wr wikiRecord) Commit() error {
 	return nil
 }
 
-func (wr *wikiRecord) Data() []interface{} {
+func (wr wikiRecord) Data() []interface{} {
 	return nil
 }
 
 type Main struct {
-	pdk.Main `flag:"!embed"`
+	pdk.Main  `flag:"!embed"`
 	StartPath string
 }
 
 func NewMain() *Main {
 	m := &Main{
-		Main: *pdk.NewMain(),
-		StartPath: "/mnt/disks/data1/Downloads/json",
+		Main:      *pdk.NewMain(),
+		StartPath: "../data",
 	}
 	m.NewSource = func() (pdk.Source, error) {
-		source := NewSource()
+		source := NewSource(m.StartPath, make(chan wikiRecord))
 		err := source.Open()
 		if err != nil {
 			return nil, errors.Wrap(err, "opening source")

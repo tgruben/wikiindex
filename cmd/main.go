@@ -2,15 +2,13 @@ package main
 
 import (
 	"log"
-	"wiki"
-	"github.com/jaffee/commandeer/pflag"
+
+	"github.com/tgruben/wikiindex"
 )
 
 func main() {
-	m := wiki.NewMain()
-	/*
+	m := wikiindex.NewMain()
 	if err := m.Run(); err != nil {
 		log.Fatal(err)
 	}
-	*/
 }
