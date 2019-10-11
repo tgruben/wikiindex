@@ -4,11 +4,12 @@ import (
 	"log"
 
 	"github.com/tgruben/wikiindex"
+		"github.com/jaffee/commandeer"
 )
 
 func main() {
-	m := wikiindex.NewMain()
-	if err := m.Run(); err != nil {
+	err := commandeer.Run(wikiindex.NewMain())
+	if err != nil {
 		log.Fatal(err)
 	}
 }
