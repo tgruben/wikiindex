@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pilosa/pdk/v2"
@@ -34,7 +35,7 @@ func removePunctuation(r rune) rune {
 func (v *vistor) processFile(path string, f os.FileInfo) error {
 
 	var json = jsoniter.ConfigCompatibleWithStandardLibrary
-	fmt.Println("Open",path)
+	fmt.Println("Open", path)
 	file, err := os.Open(path)
 	if err != nil {
 		log.Fatal(err)
@@ -75,10 +76,10 @@ type vistor struct {
 }
 
 func (v *vistor) visit(path string, f os.FileInfo, err error) error {
-	if err != nil{
+	if err != nil {
 		return err
 	}
-	fmt.Println(path,f,err)
+	fmt.Println(path, f, err)
 	if f.IsDir() {
 		return nil
 	}
@@ -97,7 +98,7 @@ type Source struct {
 
 func (s *Source) Open() error {
 	v := &vistor{s.feed}
-	go func (){
+	go func() {
 		filepath.Walk(s.path, v.visit)
 		close(s.feed)
 	}()
@@ -107,9 +108,18 @@ func (s *Source) Record() (pdk.Record, error) {
 	s.numMsgs++
 	msg, ok := <-s.feed
 	if ok {
-		fmt.Println("GO",msg)
-		s.record.record[1] = msg.docid
-		s.record.record[0]= msg.word
+		id, ok := strconv.ParseInt(msg.docid, 10, 64)
+		if ok != nil {
+			return nil, ok
+		}
+		s.record.record[0] = id
+		s.record.record[1] = msg.word
+		if s.numMsgs == 1 {
+			return s.record, pdk.ErrSchemaChange
+		}
+		if s.numMsgs%1000000 == 0 {
+			fmt.Println("Word Processed", s.numMsgs)
+		}
 		return s.record, nil
 	}
 	return nil, errors.New("messages channel closed")
@@ -123,15 +133,16 @@ func NewSource(path string, c chan message) *Source {
 	return &Source{
 		feed: c,
 		path: path,
-		record:wikiRecord{
-			record:make([]interface{},2,2),
+		record: wikiRecord{
+			record: make([]interface{}, 2, 2),
 		},
 		schema: []pdk.Field{
 			pdk.IDField{NameVal: "doc"},
 			pdk.StringField{NameVal: "word"}},
 	}
 }
-type message struct{
+
+type message struct {
 	word  string
 	docid string
 }
@@ -150,7 +161,7 @@ func (wr wikiRecord) Data() []interface{} {
 
 type Main struct {
 	pdk.Main  `flag:"!embed"`
-	StartPath string   `help:"parent directory of wikipeadia json docs"`
+	StartPath string `help:"parent directory of wikipeadia json docs"`
 }
 
 func NewMain() *Main {
